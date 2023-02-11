@@ -1,18 +1,25 @@
 import json
+import boto3
 
 def lambda_handler(event, context):
-    transactionId = event['queryStringParameters']['transactionId']
-    transactionType = event['queryStringParameters']['type']
-    transactionAmount = event['queryStringParameters']['amount']
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('gameDB')
+    print("EEEEE")
+    response = table.get_item(Key={'game_id': "1"})
 
-    print('transactionId=' + transactionId)
-    print('transactionType=' + transactionType)
-    print('transactionAmount=' + transactionAmount)
+    item = response['Item']
+
+    item['counter'] = item['counter'] + 1
+
+    table.put_item(Item=item)
+    
+    
+    print(item)
+
+
 
     transactionResponse = {}
-    transactionResponse['transactionId'] = transactionId
-    transactionResponse['type'] = transactionType
-    transactionResponse['amount'] = transactionAmount
+    transactionResponse['counter'] = str(item['counter'])
 
 
     responseObject = {}

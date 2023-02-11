@@ -113,11 +113,24 @@ Resources:
                   timer.cancel()
                   cfnresponse.send(event, context, status, {}, None)
 
+  GameDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: gameDB
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+
+
 
   # LAMBDA FUNCTIONS
 
 
-  MyFunctionRole:
+  GeneralRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -129,43 +142,45 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
 
-  TestFunction1:
+  ListAvailableGames:
     DependsOn: CopyZips
     Type: AWS::Lambda::Function
     Properties:
       Description: TestFunction
       Handler: index.lambda_handler
       Runtime: python3.7
-      Role: !GetAtt 'MyFunctionRole.Arn'
+      Role: !GetAtt 'GeneralRole.Arn'
       Timeout: 300
       Code:
         S3Bucket: !Ref 'LambdaZipsBucket'
         S3Key: !Sub '${QSS3KeyPrefix}functions/packages/CleanupPV/${ZipFileName}'
+
   
   # API GATEWAY
 
-  ApiGatewayRestApi:
+  ApiGatewayRestBubbleAPI:
     Type: AWS::ApiGateway::RestApi
     Properties:
       ApiKeySourceType: HEADER
-      Description: An API Gateway with a Lambda Integration
+      Description: API for Bubble
       EndpointConfiguration:
         Types:
           - EDGE
-      Name: lambda-api
+      Name: bubble-game-api
 
   # Resource for each lambda
 
-  ApiGatewayResource:
-    DependsOn: TestFunction1
+  ApiGatewayResourceListAvailableGames:
+    DependsOn: ListAvailableGames
     Type: AWS::ApiGateway::Resource
     Properties:
-      ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
-      PathPart: 'testingResource'
-      RestApiId: !Ref ApiGatewayRestApi
+      ParentId: !GetAtt ApiGatewayRestBubbleAPI.RootResourceId
+      PathPart: 'availableGames'
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
 
-  ApiGatewayMethod:
+  ApiGatewayMethodListAvailableGames:
     Type: AWS::ApiGateway::Method
     Properties:
       ApiKeyRequired: false
@@ -173,44 +188,44 @@ Resources:
       HttpMethod: GET
       Integration:
         ConnectionType: INTERNET
-        Credentials: !GetAtt ApiGatewayIamRole.Arn
+        Credentials: !GetAtt ApiGatewayIamRoleBubble.Arn
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TestFunction1.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListAvailableGames.Arn}/invocations'
       MethodResponses:
         - StatusCode: 200
           ResponseModels:
             application/json: Empty
-      OperationName: 'testingMethod'
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
+      OperationName: 'GetListAvailableGames'
+      ResourceId: !Ref ApiGatewayResourceListAvailableGames
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
 
-  ApiGatewayModel:
+  ApiGatewayModelBubble:
     Type: AWS::ApiGateway::Model
     Properties:
       ContentType: 'application/json'
-      RestApiId: !Ref ApiGatewayRestApi
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
       Schema: {}
 
-  ApiGatewayStage:
+  ApiGatewayStageBubble:
     Type: AWS::ApiGateway::Stage
     Properties:
-      DeploymentId: !Ref ApiGatewayDeployment
-      Description: Lambda API Stage v1
-      RestApiId: !Ref ApiGatewayRestApi
-      StageName: 'TestingStage'
+      DeploymentId: !Ref ApiGatewayDeploymentBubble
+      Description: Dev enviorment for Bubble
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+      StageName: 'DEV'
 
 
-  ApiGatewayDeployment:
+  ApiGatewayDeploymentBubble:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: ApiGatewayMethod
+    DependsOn: ApiGatewayMethodListAvailableGames
     Properties:
-      Description: Lambda API Deploymenta
-      RestApiId: !Ref ApiGatewayRestApi
+      Description: Bubble Deployment
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
 
-  ApiGatewayIamRole:
+  ApiGatewayIamRoleBubble:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -231,4 +246,4 @@ Resources:
             Statement:
               - Effect: 'Allow'
                 Action: 'lambda:*'
-                Resource: !GetAtt TestFunction1.Arn
+                Resource: !GetAtt ListAvailableGames.Arn
