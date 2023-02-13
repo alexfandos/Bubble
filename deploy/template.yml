@@ -227,7 +227,6 @@ Resources:
       PathPart: 'modifyGame'   # Set path Name
       RestApiId: !Ref ApiGatewayRestBubbleAPI
 
-
   ApiGatewayMethodModifyGame:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -249,12 +248,58 @@ Resources:
       OperationName: 'PostModifyGame'   # Set operation name
       ResourceId: !Ref ApiGatewayResourceModifyGame  # set to Resource
       RestApiId: !Ref ApiGatewayRestBubbleAPI
+  
+  ## GetGameStatus
+
+  GetGameStatus:  
+    DependsOn: CopyZips
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: get game status  # Set description
+      Handler: getGameStatus.lambda_handler   # Set file.function
+      Runtime: python3.7
+      Role: !GetAtt 'GeneralRole.Arn'
+      Timeout: 300
+      Code:
+        S3Bucket: !Ref 'LambdaZipsBucket'
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/CleanupPV/${ZipFileName}'
+
+  ApiGatewayResourceGetGameStatus:
+    DependsOn: GetGameStatus   # Set to Lambda resource
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGatewayRestBubbleAPI.RootResourceId
+      PathPart: 'getGameStatus'   # Set path Name
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+
+  ApiGatewayMethodGetGameStatus:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET   #Modify to needs
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRoleBubble.Arn
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+        Type: AWS_PROXY
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetGameStatus.Arn}/invocations'   # Set to lambda function
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+      OperationName: 'GetGameStatus'   # Set operation name
+      ResourceId: !Ref ApiGatewayResourceGetGameStatus  # set to Resource
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+
 
   ## Common for all Lambdas
 
   ApiGatewayDeploymentBubble:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: [ApiGatewayMethodListAvailableGames, ApiGatewayMethodModifyGame]   #Add all methods
+    DependsOn: [ApiGatewayMethodListAvailableGames, ApiGatewayMethodModifyGame, ApiGatewayMethodGetGameStatus]   #Add all methods
     Properties:
       Description: Bubble Deployment v2
       RestApiId: !Ref ApiGatewayRestBubbleAPI
@@ -280,7 +325,7 @@ Resources:
             Statement:
               - Effect: 'Allow'
                 Action: 'lambda:*'
-                Resource: [!GetAtt ListAvailableGames.Arn, !GetAtt ModifyGame.Arn] #Add all lambdas
+                Resource: [!GetAtt ListAvailableGames.Arn, !GetAtt ModifyGame.Arn, !GetAtt GetGameStatus.Arn] #Add all lambdas
 
 
   # API GATEWAY

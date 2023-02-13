@@ -126,7 +126,7 @@ def startGame(user, game_id):
 
     if "status" not in item:
         return False, "Error in database"
-    status = item["player_names"]
+    status = item["status"]
 
     if status != "WAITING":
         return False, "Game already started"
@@ -168,6 +168,21 @@ def startGame(user, game_id):
                 "#m": "map",
             }
         )
+
+    for player in player_names:
+        playerDB.update_item(
+                Key={'player_id': player},
+                UpdateExpression="SET #m = :m, #d = :d, #p = :p",
+                ExpressionAttributeValues={
+                    ":m": params["initial_money"],
+                    ":d": 0,
+                    ":p": 0},
+                ExpressionAttributeNames={
+                    "#m": "money",
+                    "#d": "debt",
+                    "#p": "accumulated_points",
+                }
+            )
 
     return True, "Game started"
 

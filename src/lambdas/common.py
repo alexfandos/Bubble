@@ -2,6 +2,7 @@ import boto3
 import hashlib
 import os
 from datetime import datetime
+import json
 
 
 def generateHashedPassword(password, salt = None):
