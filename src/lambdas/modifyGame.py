@@ -18,6 +18,8 @@ def generateHashedPassword(password, salt = None):
     )
     return salt, key
 
+
+
 def checkUser(user, password):
     dynamodb = boto3.resource('dynamodb')
     playerDB = dynamodb.Table('playerDB')
@@ -27,10 +29,10 @@ def checkUser(user, password):
     if "Item" in response: #user exists
         item = response['Item']
         if "salt" not in item:
-            return False, "Some error encounted when retriving user's salt"
+            return False, "Error in database"
         salt = bytes.fromhex(item['salt'])
         if "hashed_pass" not in item:
-            return False, "Some error encounted when retriving user's hashed password"
+            return False, "Error in database"
         user_hashed_pass = item['hashed_pass']
 
         _, key = generateHashedPassword(password, salt)
@@ -53,18 +55,20 @@ def checkUser(user, password):
     else:
         return False, "User does not exist"
 
+
+
 def generateGame(user, password):
-    
 
     success, message = checkUser(user, password)
 
     dynamodb = boto3.resource('dynamodb')
     
+    gameDB = dynamodb.Table('gameDB')
 
     if success:
         #Check if user already in another game
 
-        gameDB = dynamodb.Table('gameDB')
+        
         response = gameDB.scan(FilterExpression=(Attr('player1').eq(user) | Attr('player2').eq(user) | Attr('player3').eq(user) | Attr('player4').eq(user)) & Attr('status').ne("FINISHED"))
         data = response['Items']
         if len(data) != 0:
@@ -99,12 +103,40 @@ def generateGame(user, password):
     item["action_done"] = False
     item["map"] = "/{/}"
 
-
     gameDB.put_item(Item=item)
-
-    
-
     return True, "Game generated", item["game_id"]
+
+
+
+def deleteGame(user, password, game_id):
+    success, message = checkUser(user, password)
+    dynamodb = boto3.resource('dynamodb')
+    if success:
+        gameDB = dynamodb.Table('gameDB')
+        response = gameDB.get_item(Key={'game_id': game_id})
+
+        if "Item" not in response: #user exists
+            return False, "game_id does not exist"
+
+        item = response["Item"]
+
+        if "player1" not in item:
+            return False, "Error in database"
+
+        player1 = item["player1"]
+
+        if player1 != user:
+            return False, "User is not owner of game"
+
+        response = gameDB.delete_item(
+            Key={
+                'game_id': game_id
+            }
+        )
+        return True, "Game deleted"
+    else:
+        return success, message
+
 
 def returnErrorMessage(message):
     responseObject = {}
@@ -113,6 +145,8 @@ def returnErrorMessage(message):
     responseObject['headers']['Content-Type'] = 'application/json'  
     responseObject['body'] = json.dumps(message)
     return responseObject
+
+
 
 def lambda_handler(event, context):
     
@@ -149,6 +183,14 @@ def lambda_handler(event, context):
         answer["message"] = message
         answer["game_id"] = game_id
 
+    elif action == "DELETE":
+        if params != None and "game_id" in params:
+            game_id = params["game_id"]
+            success, message = deleteGame(user, password, game_id)
+        else:
+            return returnErrorMessage("game_id missing in request")
+        answer = {}
+        answer["message"] = message
     else:
         return returnErrorMessage("Unkown action")
 
