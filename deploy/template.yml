@@ -125,9 +125,20 @@ Resources:
         - AttributeName: game_id
           KeyType: HASH
 
+  PlayerDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: playerDB
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: player_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: player_id
+          KeyType: HASH
 
 
-  # LAMBDA FUNCTIONS
+
 
 
   GeneralRole:
@@ -144,12 +155,17 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
 
-  ListAvailableGames:
+
+  # LAMBDA FUNCTIONS
+
+  ## List available games
+
+  ListAvailableGames:  
     DependsOn: CopyZips
     Type: AWS::Lambda::Function
     Properties:
-      Description: TestFunction
-      Handler: index.lambda_handler
+      Description: List Available games   # Set description
+      Handler: listAvailableGames.lambda_handler   # Set file.function
       Runtime: python3.7
       Role: !GetAtt 'GeneralRole.Arn'
       Timeout: 300
@@ -157,28 +173,14 @@ Resources:
         S3Bucket: !Ref 'LambdaZipsBucket'
         S3Key: !Sub '${QSS3KeyPrefix}functions/packages/CleanupPV/${ZipFileName}'
 
-  
-  # API GATEWAY
-
-  ApiGatewayRestBubbleAPI:
-    Type: AWS::ApiGateway::RestApi
-    Properties:
-      ApiKeySourceType: HEADER
-      Description: API for Bubble
-      EndpointConfiguration:
-        Types:
-          - EDGE
-      Name: bubble-game-api
-
-  # Resource for each lambda
-
   ApiGatewayResourceListAvailableGames:
-    DependsOn: ListAvailableGames
+    DependsOn: ListAvailableGames   # Set to Lambda resource
     Type: AWS::ApiGateway::Resource
     Properties:
       ParentId: !GetAtt ApiGatewayRestBubbleAPI.RootResourceId
-      PathPart: 'availableGames'
+      PathPart: 'availableGames'   # Set path Name
       RestApiId: !Ref ApiGatewayRestBubbleAPI
+
 
   ApiGatewayMethodListAvailableGames:
     Type: AWS::ApiGateway::Method
@@ -193,36 +195,68 @@ Resources:
         PassthroughBehavior: WHEN_NO_MATCH
         TimeoutInMillis: 29000
         Type: AWS_PROXY
-        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListAvailableGames.Arn}/invocations'
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListAvailableGames.Arn}/invocations'   # Set to lambda function
       MethodResponses:
         - StatusCode: 200
           ResponseModels:
             application/json: Empty
-      OperationName: 'GetListAvailableGames'
-      ResourceId: !Ref ApiGatewayResourceListAvailableGames
+      OperationName: 'GetListAvailableGames'   # Set operation name
+      ResourceId: !Ref ApiGatewayResourceListAvailableGames  # set to Resource
       RestApiId: !Ref ApiGatewayRestBubbleAPI
 
-  ApiGatewayModelBubble:
-    Type: AWS::ApiGateway::Model
+  ## ModifyGame
+
+  ModifyGame:  
+    DependsOn: CopyZips
+    Type: AWS::Lambda::Function
     Properties:
-      ContentType: 'application/json'
-      RestApiId: !Ref ApiGatewayRestBubbleAPI
-      Schema: {}
+      Description: modify game create, delete, start game   # Set description
+      Handler: modifyGame.lambda_handler   # Set file.function
+      Runtime: python3.7
+      Role: !GetAtt 'GeneralRole.Arn'
+      Timeout: 300
+      Code:
+        S3Bucket: !Ref 'LambdaZipsBucket'
+        S3Key: !Sub '${QSS3KeyPrefix}functions/packages/CleanupPV/${ZipFileName}'
 
-  ApiGatewayStageBubble:
-    Type: AWS::ApiGateway::Stage
+  ApiGatewayResourceModifyGame:
+    DependsOn: ModifyGame   # Set to Lambda resource
+    Type: AWS::ApiGateway::Resource
     Properties:
-      DeploymentId: !Ref ApiGatewayDeploymentBubble
-      Description: Dev enviorment for Bubble
+      ParentId: !GetAtt ApiGatewayRestBubbleAPI.RootResourceId
+      PathPart: 'modifyGame'   # Set path Name
       RestApiId: !Ref ApiGatewayRestBubbleAPI
-      StageName: 'DEV'
 
+
+  ApiGatewayMethodModifyGame:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: GET   #Modify to needs
+      Integration:
+        ConnectionType: INTERNET
+        Credentials: !GetAtt ApiGatewayIamRoleBubble.Arn
+        IntegrationHttpMethod: POST
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+        Type: AWS_PROXY
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ModifyGame.Arn}/invocations'   # Set to lambda function
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+      OperationName: 'PostModifyGame'   # Set operation name
+      ResourceId: !Ref ApiGatewayResourceModifyGame  # set to Resource
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+
+  ## Common for all Lambdas
 
   ApiGatewayDeploymentBubble:
     Type: AWS::ApiGateway::Deployment
-    DependsOn: ApiGatewayMethodListAvailableGames
+    DependsOn: [ApiGatewayMethodListAvailableGames, ApiGatewayMethodModifyGame]   #Add all methods
     Properties:
-      Description: Bubble Deployment
+      Description: Bubble Deployment v2
       RestApiId: !Ref ApiGatewayRestBubbleAPI
 
   ApiGatewayIamRoleBubble:
@@ -246,4 +280,36 @@ Resources:
             Statement:
               - Effect: 'Allow'
                 Action: 'lambda:*'
-                Resource: !GetAtt ListAvailableGames.Arn
+                Resource: [!GetAtt ListAvailableGames.Arn, !GetAtt ModifyGame.Arn] #Add all lambdas
+
+
+  # API GATEWAY
+
+  ApiGatewayRestBubbleAPI:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      ApiKeySourceType: HEADER
+      Description: API for Bubble
+      EndpointConfiguration:
+        Types:
+          - EDGE
+      Name: bubble-game-api
+
+  # Resource for each lambda
+
+
+  ApiGatewayModelBubble:
+    Type: AWS::ApiGateway::Model
+    Properties:
+      ContentType: 'application/json'
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+      Schema: {}
+
+  ApiGatewayStageBubble:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref ApiGatewayDeploymentBubble
+      Description: Dev enviorment for Bubble v2  #update if new lambda/method has been deployed
+      RestApiId: !Ref ApiGatewayRestBubbleAPI
+      StageName: 'DEV'
+

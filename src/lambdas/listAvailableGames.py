@@ -1,25 +1,22 @@
 import json
 import boto3
+from boto3.dynamodb.conditions import Attr
 
 def lambda_handler(event, context):
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table('gameDB')
     print("EEEEE")
-    response = table.get_item(Key={'game_id': "1"})
+    response = table.scan(FilterExpression=Attr('status').eq('WAITING') & Attr('players').lt(7))
 
-    item = response['Item']
+    data = response['Items']
 
-    item['counter'] = item['counter'] + 1
-
-    table.put_item(Item=item)
-    
-    
-    print(item)
-
+    while 'LastEvaluatedKey' in response:
+        response = table.scan(ExclusiveStartKey=response['LastEvaluatedKey'])
+        data.extend(response['Items'])
 
 
     transactionResponse = {}
-    transactionResponse['counter'] = str(item['counter'])
+    transactionResponse['data'] = str(data)
 
 
     responseObject = {}
