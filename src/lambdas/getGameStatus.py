@@ -46,7 +46,7 @@ def buildGameStatus(user, game_id):
 
         player_info.append(player_item)
 
-    status = {"game": game, "players": player_info}
+    status = {"game": game, "players": player_info, "params": getParams()}
 
     return True, "Ok", status
 

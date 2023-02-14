@@ -5,6 +5,20 @@ from datetime import datetime
 import json
 
 
+def checkAndExtractFromRequest(fields, request):
+    if isinstance(fields, str):
+        if fields not in request:
+            return False, fields + " is missing in request"
+        return True, request[fields]
+    else:
+        results = []
+        for field in fields:
+            if field not in request:
+                return False, field + " is missing in request"
+            results.append(request[field])
+    return True, results
+
+
 def generateHashedPassword(password, salt = None):
     if salt == None:
         salt = os.urandom(32)
